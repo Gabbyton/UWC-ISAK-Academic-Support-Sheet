@@ -8,8 +8,10 @@ var weekTutorsList = []; // array of tutors who have sent the form for the week
 var instructions = [];
 
 // with reference to weekTutorsList array
-var hoursCommitted = [];
 var hoursCompleted = [];
+
+// variables for generating program keys for tutor selection
+var subjectKeys = []; // array of objects containing key string and tutor names
 
 function generateSchedule() {
 
@@ -17,19 +19,22 @@ function generateSchedule() {
   
   var schedBlockSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Schedules");
   var tutorResponseSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Tutors Schedule");
-  var subjectAssignmentSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Tutor Subject Assignments");
+  var subjectAssignmentSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Tutor Subject Assignments"); 
   var tutorHoursTallySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Tutor Hours Tally");
+  var programInputSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Program Input")
 
 // pre-run functions
-  getSchedBlocks(schedBlockSheet);
-  getTutorList(subjectAssignmentSheet);
-  getFormResponders(tutorResponseSheet);
-  instructions.sort();
+  getSchedBlocks(schedBlockSheet); // get schedule blocks on the calendar and save into an array
+  getTutorList(subjectAssignmentSheet); // get the list of tutors in the subject assingment sheet
+  getFormResponders(tutorResponseSheet); // get the list of responders for the week
+  instructions.sort(); // sort the writing instructions for the calendar
 // save hours information into sheet
-  saveHours(tutorHoursTallySheet);
+  saveHours(tutorHoursTallySheet); // update the record of hours for a tutor and set the current limit to two
+  generateProgramInput(); // generate list of items required for tutor dropdown list mechanism
+  clearTable(schedBlockSheet,programInputSheet); // clear both the schedule calendar and the table
 // schedule write on sheet
-  clearTable(schedBlockSheet);
-  writeToSheet(schedBlockSheet);
+  writeToSheet(schedBlockSheet); // write the calendar schedule and the notes display
+  writeInputToSheet(programInputSheet); // write the list of items required for tutor dropdown list mechanism
 }
 
 function getSchedBlocks( schedBlockSheet ) {
@@ -46,7 +51,7 @@ function getTutorList(subjectAssignmentSheet) {
       tutorEmails.push(item[1]);
     }
     var tutorEmailsIndex = tutorEmails.indexOf(item[1]);
-    var subjectItem = item[2] + " (" + item[3] + ")";
+    var subjectItem = item[2];
     tutorNames[ tutorEmailsIndex ] = item[0];
     if( tutorSubjects[tutorEmailsIndex] == null ) {
       tutorSubjects[tutorEmailsIndex] = [subjectItem];
@@ -68,8 +73,9 @@ function getFormResponders(tutorResponseSheet) {
       // for each day of week column, parse the csv schedules
       for( var day = 2 ; day <= 8 ; day ++ ) {
         var parsedInstructions = parseSchedule(item[0],weekTutorsList.indexOf(tutorObject),day,item[day]);
-        if( parsedInstructions != null )
+        if( parsedInstructions != null ) {
           instructions = instructions.concat(parsedInstructions);
+        }
       }
       hoursCompleted[weekTutorsList.indexOf(tutorObject)] = item[1];
     }
@@ -101,9 +107,6 @@ function parseSchedule(tutorEmail,tutorIndex,day,rawCSVString) {
     parsedInstructions.push(instruction);
     
     // increment the number of hours committed into a new array that takes the tutorIndex as reference
-    if( hoursCommitted[tutorIndex] == null )
-      hoursCommitted[tutorIndex] = 0;
-    hoursCommitted[tutorIndex] ++;
   });
   return parsedInstructions;
 }
@@ -111,6 +114,7 @@ function parseSchedule(tutorEmail,tutorIndex,day,rawCSVString) {
 // for each of the elements on the instructions, write and set notes
 
 function writeToSheet(schedBlockSheet) {
+
   var schedTableRange = schedBlockSheet.getRange("C4:I17");
   var currRow = instructions[0][0];
   var currCol = instructions[0][1];
@@ -154,7 +158,6 @@ function writeToSheet(schedBlockSheet) {
           var subjects = rowListingSplit[1].split(",");
           if(subjects.length == 0)
             subjects = [rowListingSplit[1]];
-          Logger.log(subjects);
           writeString += name + "\n";
           subjects.forEach(function(displaySubj,displaySubjIdx){
             if(displaySubj != "") {
@@ -174,11 +177,27 @@ function writeToSheet(schedBlockSheet) {
   }
 }
 
+function writeInputToSheet (programInputSheet) {
+  var subjectKeysSize = subjectKeys.length;
+  var subjectKeysTableRange = programInputSheet.getRange(2, 1, subjectKeysSize,2);
+  for( var i = 0 ; i < subjectKeysSize ; i ++ ) {
+    var subjectTutorName = subjectKeys[i][0];
+    subjectKeysTableRange.getCell(i+1, 1).setValue(subjectTutorName);
+    var nameWriteString = "";
+    
+    subjectKeys[i][1].forEach(function(name,index){
+      nameWriteString += ( name + "," );
+    });
+    var result = nameWriteString.substring(0, nameWriteString.length-1);
+    subjectKeysTableRange.getCell(i+1, 2).setValue(result);
+  }
+}
+
 // save the hours commitment and hours served for the week
 
 function saveHours(tutorHoursTallySheet) {
   // get tutor hours tally range
-  var tutorHoursTallyRange = tutorHoursTallySheet.getRange(2,1,tutorHoursTallySheet.getLastRow()-1,tutorHoursTallySheet.getLastColumn()-1);
+  var tutorHoursTallyRange = tutorHoursTallySheet.getRange(2,1,tutorHoursTallySheet.getLastRow(),tutorHoursTallySheet.getLastColumn());
   var tutorHoursTallyRangeValues = tutorHoursTallyRange.getValues();
   var hoursTallyEmailsList = [];
   // get list of emails
@@ -188,18 +207,45 @@ function saveHours(tutorHoursTallySheet) {
   // iterate over weekly tutors list to save hours:
   weekTutorsList.forEach(function(item,index){
     var writeRow = hoursTallyEmailsList.indexOf(item[1]) + 1;
-    var currHoursComm = hoursCommitted[index];
     var currHoursComp = hoursCompleted[index];
     var prevHourServed = tutorHoursTallyRangeValues[writeRow-1][3];
-    Logger.log(item[1] + ": " + prevHourServed);
-    tutorHoursTallyRange.getCell(writeRow,3).setValue(currHoursComm);
     var prevAdd = (prevHourServed == "") ? 0 : prevHourServed;
     tutorHoursTallyRange.getCell(writeRow,4).setValue( ( prevAdd + currHoursComp ) );
+    tutorHoursTallyRange.getCell(writeRow,3).setValue( 2 );
   });
 }
 
-function clearTable(schedBlockSheet) {
+function clearTable(schedBlockSheet,programInputSheet) {
   var schedTableRange = schedBlockSheet.getRange("C4:I17");
-  schedTableRange.clear({contentsOnly: true});
-  schedTableRange.clear({commentsOnly: true});
+  if(programInputSheet.getLastRow()!=1) {
+    var programInputRange = programInputSheet.getRange(2, 1,programInputSheet.getLastRow()-1,2);
+    programInputRange.clear({contentsOnly: true});
+    schedTableRange.clear({contentsOnly: true});
+    schedTableRange.clear({commentsOnly: true});
+  }
+}
+
+function generateProgramInput() { // generate the program input from the instructions array
+//  subjectKeys Format: [["Economics;0-1",["gabriel","poum"]]];
+  var uniqueKeysAlone = [];
+  instructions.forEach(function(instr,instrIdx){
+    var instrTutorSubj = weekTutorsList[instr[2]][2]; // get the tutors subject
+    var instrTutorName = weekTutorsList[instr[2]][0]; // get tutor name
+    instrTutorSubj.forEach(function(subj,subjIdx){
+      var uniqueKeyString = subj + ";" + instr[0] + "-" + instr[1];
+      if( uniqueKeysAlone.indexOf(uniqueKeyString) > -1 ) { // check if the key already exists
+        for( var i = 0 ; i < subjectKeys.length ; i ++ ) { // iterate over the current list and append name to uniqueKey already generated
+          if( uniqueKeyString == subjectKeys[i][0] ) {
+            subjectKeys[i][1] = subjectKeys[i][1].concat(instrTutorName); // add name of tutor
+            break;
+          }
+        }
+      }
+      else {
+        uniqueKeysAlone.push(uniqueKeyString); // add to identifier array the name of the element
+        var uniqueKeysArraywithSubject = [ uniqueKeyString , [instrTutorName] ];
+        subjectKeys.push(uniqueKeysArraywithSubject);
+      }
+    });
+  });
 }

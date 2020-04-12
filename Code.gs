@@ -2,8 +2,34 @@ var start_row = 15;
 var subj_col = 2;
 var pref_Tutor_col = 5;
 var date_edit_col = 7;
-var Tutor_list_range = "A2:C38";
 var Tutor_list_subj_dist = 3;
+
+var timesArray = [
+  "07:00-08:00",
+  "08:00-09:00",
+  "09:00-10:00",
+  "10:00-11:00",
+  "11:00-12:00",
+  "12:00-13:00",
+  "13:00-14:00",
+  "14:00-15:00",
+  "15:00-16:00",
+  "16:00-17:00",
+  "17:00-18:00",
+  "18:30-19:30",
+  "19:30-20:15",
+  "20:30-21:30"
+];
+
+var daysArray = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday"
+];
 
 function onEdit(e) {
   ws = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sign Up");
@@ -11,37 +37,50 @@ function onEdit(e) {
   var activeCell = e.range;
   var r = activeCell.getRow();
   var c = activeCell.getColumn();
-  if( activeCell.getSheet().getName() == "Sign Up" && c == subj_col && r > start_row ) {
-    var val = activeCell.getValue();
-    var numRows = activeCell.getNumRows();
-    var prefTutorCell = ws.getRange( r , pref_Tutor_col , numRows );
-    var dateEditCell = ws.getRange( r , date_edit_col , numRows );
-    if(val == "") {
-      prefTutorCell.clear();
-      prefTutorCell.setDataValidation(null);
+  
+  
+  if ( activeCell.getSheet().getName() == "Sign Up" && r > start_row ) {
+  var wsoptions = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Program Input");
+  if(c > 1 && c < 5 ) {
+    var subject = ws.getRange(r,2,1).getValue().toString();
+    var date = ws.getRange(r,3,1).getValue().toString();
+    var time = ws.getRange(r,4,1).getValue().toString();
+    var dateIndex = daysArray.indexOf(date);
+    var timeIndex = timesArray.indexOf(time);
+    var datetime = timeIndex + "-" + dateIndex;
+    var prefTutorCell = ws.getRange( r , pref_Tutor_col ,1 );
+    if( dateIndex >= 0 && timeIndex >= 0 && subject != "" ) {
+      var tutorIndexCell = ws.getRange(r,6,1);
+      var uniqueKey = subject + ";" + datetime;
+      var getListReturnValue = getList( uniqueKey , wsoptions );
+      var dateEditCell = ws.getRange( r , date_edit_col , 1 );
+      prefTutorCell.setValue("");
+      setValidationRule( getListReturnValue[0] , prefTutorCell );
+      tutorIndexCell.setValue(getListReturnValue[1]);
     }
-    else {
-      prefTutorCell.clear();
-      setValidationRule( getList( val ) , prefTutorCell );
-    }
-    dateEditCell.setValue( new Date() );
   }
   
+  dateEditCell.setValue( new Date() );
+  }
 }
 
-function getList( value ) {
-  wsoptions = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Tutor Subject Assignments");
-  var optionsRange = wsoptions.getRange( Tutor_list_range );
+function getList( uniqueKey , wsoptions ) {
+  
+  var optionsRange = wsoptions.getRange(2,1,wsoptions.getLastRow()-1,2);
   var numRows = optionsRange.getNumRows();
   var numCols = optionsRange.getNumColumns();
-  var TutorNames = [];
-  for( var i = 2 ; i <= numRows ; i ++  ) {
-    var compVal = optionsRange.getCell( i , Tutor_list_subj_dist ).getValue();
-    if( compVal == value ) { 
-      TutorNames.push( optionsRange.getCell(i, 1).getValue() );
+  var TutorNames = ["no tutors available at the time"];
+  var tutorIndex = -1;
+  for( var i = 0 ; i < numRows ; i ++ ) {
+    var optionKey = optionsRange.getCell(i+1,1).getValue().toString();
+    if(optionKey == uniqueKey ) {
+      var nameList = optionsRange.getCell(i+1,2).getValue().toString()
+      TutorNames = nameList.split(",");
+      tutorIndex = i+1;
+      break;
     }
   }
-  return TutorNames;
+  return [TutorNames,tutorIndex];
 }
 
 function setValidationRule(list, cell) {
